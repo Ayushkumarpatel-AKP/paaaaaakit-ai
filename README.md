@@ -6,15 +6,24 @@
 
 ## 📥 Direct Android APK Download
 
-You can download and install the pre-built APK directly onto any Android device:
+A pre-built release APK is committed at the repo root — no build tools needed.
 
-[![Download PackIT AI APK](https://img.shields.io/badge/Download-PackIT__AI__v1.0.apk-00F2FE?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Ayushkumarpatel-AKP/packit-ai/raw/main/PackIT_AI_v1.0.apk)
+| | |
+|---|---|
+| **File** | [`PackIT_AI_v1.0.apk`](https://github.com/Ayushkumarpatel-AKP/paaaaaakit-ai/raw/main/PackIT_AI_v1.0.apk) |
+| **Size** | ~47.8 MB |
+| **Built** | 27 Sep 2026 · `flutter build apk --release` (Flutter 3.35.3) |
+
+[![Download PackIT AI APK](https://img.shields.io/badge/Download-PackIT__AI__v1.0.apk-00F2FE?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Ayushkumarpatel-AKP/paaaaaakit-ai/raw/main/PackIT_AI_v1.0.apk)
 
 ### 📲 How to Install on Android:
-1. Tap the **Download** button above or download [`PackIT_AI_v1.0.apk`](https://github.com/Ayushkumarpatel-AKP/packit-ai/raw/main/PackIT_AI_v1.0.apk) directly from this repository.
+1. Tap the **Download** button above, or grab [`PackIT_AI_v1.0.apk`](https://github.com/Ayushkumarpatel-AKP/paaaaaakit-ai/raw/main/PackIT_AI_v1.0.apk) straight from the [Releases page](https://github.com/Ayushkumarpatel-AKP/paaaaaakit-ai/releases).
 2. Open the downloaded file on your Android phone.
 3. If prompted, enable **"Install from unknown sources"** for your browser/file manager.
 4. Tap **Install** and open **PackIT AI**!
+
+> Upgrading over an older install? Uninstall first — the release APK is signed with the
+> debug key here, so signature mismatch will block an in-place update.
 
 ---
 
