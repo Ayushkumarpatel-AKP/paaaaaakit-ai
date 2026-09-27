@@ -1,0 +1,49 @@
+#!/bin/sh
+# Auto-push the current branch to its upstream after every commit.
+# Installed via: git config core.hooksPath .githooks
+#
+# Failure here never fails the commit -- git ignores post-commit exit codes.
+# It only reports, so a broken remote can't silently swallow your work.
+
+branch=$(git symbolic-ref --quiet --short HEAD) || exit 0
+
+# detached HEAD
+[ -n "$branch" ] || exit 0
+
+# mid-rebase / mid-merge / mid-cherry-pick: let the sequence finish first
+gitdir=$(git rev-parse --git-dir)
+[ -d "$gitdir/rebase-merge" ] && exit 0
+[ -d "$gitdir/rebase-apply" ] && exit 0
+[ -f "$gitdir/MERGE_HEAD" ] && exit 0
+[ -f "$gitdir/CHERRY_PICK_HEAD" ] && exit 0
+
+remote=$(git config --get "branch.$branch.remote")
+[ -n "$remote" ] || exit 0
+
+# local-only branch
+[ "$remote" = "." ] && exit 0
+
+url=$(git remote get-url "$remote" 2>/dev/null)
+case "$url" in
+  *github.com*) ;;
+  *) exit 0 ;;
+esac
+
+echo "post-commit: pushing $branch -> $remote"
+
+# 3 attempts with backoff; transient TLS/DNS hiccups are common on Windows
+attempt=1
+max=3
+while [ "$attempt" -le "$max" ]; do
+  if git push "$remote" "HEAD:refs/heads/$branch" 2>&1; then
+    exit 0
+  fi
+  attempt=$((attempt + 1))
+  [ "$attempt" -le "$max" ] || break
+  echo "post-commit: push attempt $attempt/$max failed, retrying..."
+  sleep $((attempt * 3))
+done
+
+echo "post-commit: AUTO-PUSH FAILED -- your commit is local only." >&2
+echo "post-commit: run 'git push $remote $branch' when the network is back." >&2
+exit 0
