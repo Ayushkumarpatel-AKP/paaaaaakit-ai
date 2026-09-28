@@ -5,7 +5,7 @@
 > **STATUS** table after every task and commit that update together with the
 > task's code. Commits are auto-pushed by `.githooks/post-commit`.
 
-Last updated: task 2 complete.
+Last updated: task 3 complete.
 
 ---
 
@@ -200,7 +200,7 @@ New `backend/services/stack_solver.py` (+ tests in `backend/tests/`).
 | 0 | Handoff document | **DONE** | `1a90e0d` |
 | 1 | Flutter: use wizard inputs | **DONE** | (this commit) |
 | 2 | Backend: extend product schema | **DONE** | (this commit) |
-| 3 | Backend: stack solver | TODO | |
+| 3 | Backend: stack solver | **DONE** | (this commit) |
 | 4 | Backend: wire into /recommendations | TODO | |
 | 5 | Flutter: real values on result screen | TODO | |
 | 6 | Verify + document | TODO | |
@@ -261,6 +261,52 @@ Verified: `cd backend && python -m pytest -q` → **37 passed**.
 Important contract to preserve in Task 3/4: `test_recommendations_fall_back_without_key`
 asserts each tier still exposes `structure`, `otr_cc_m2_day` (> 0) and
 `layers`. Keep those keys when the solver replaces the templates.
+
+### Task 3 notes (for the next agent)
+
+New file: `backend/services/stack_solver.py`.
+
+- `solve_recommendations(product) -> {cost_optimized, sustainability_first,
+  max_barrier}`. Same field names as the old templates (`structure`, `layers`,
+  `otr_cc_m2_day`, `mvtr_g_m2_day`, `cost_per_1k`, `cost_per_unit`, `currency`,
+  `carbon_kgco2e_per_kg`, `totalThicknessUm`, `tier`, `rationale`) **plus**:
+  `meets_target`, `predicted_shelf_life_days`, `limiting_factor`,
+  `target_shelf_life_days`, `recyclability_score`, `recyclability_grade`,
+  `distinct_material_count`, `compostable`, `within_budget`, `why` (list).
+- Search space: `OUTER_OPTIONS` x `BARRIER_OPTIONS` x `SEALANT_OPTIONS` = **1120
+  candidates** (2-layer and 3-layer forms, never the same material twice).
+- Evaluation reuses the shared engines only: `series_transmission`,
+  `moisture_gain_curve`, `oxygen_accumulation`, `predict_shelf_life`,
+  `stack_metrics`, `recyclability_score`. Comments explain that the quality ODE
+  is integrated **once** (it is stack-independent) rather than per candidate —
+  that is the whole reason a 1120-candidate search runs in ~0.12 s.
+- Tiers: `cost_optimized` = cheapest feasible within budget (falls back to the
+  feasible set, then to everything, if the budget excludes all of it);
+  `sustainability_first` = best `recyclability_score`; `max_barrier` = lowest
+  combined OTR/MVTR.
+- When nothing is feasible, the closest stacks are returned with
+  `meets_target: False` — the API must surface that, not hide it.
+
+Measured behaviour (`backend/tests/test_stack_solver.py`, 10 tests):
+- Chips (snacks, 35% fat, 180 d): 312/1120 candidates feasible. Every tier needs
+  a real barrier core. `cost_optimized` = paperboard/met-PET/LDPE ~₹1006/1k;
+  `max_barrier` = PET/alu-foil 9 µm/LDPE.
+- Milk (dairy, 3.5% fat, 14 d): `cost_optimized` is a **2-layer** stack because
+  a short chilled life needs no barrier core — i.e. the tiers genuinely respond
+  to the product. `limiting_factor` is often `moisture` for chips and `none` for
+  short-life chilled products.
+- `test_solver_agrees_with_the_shelf_life_engine` cross-checks the solver's
+  predicted shelf life against `digital_twin.build_shelf_life` for the same
+  stack (must stay within 3 days and report the same limiting factor). **Keep
+  that test passing** — it is what stops the recommendation screen and the
+  simulator from contradicting each other.
+- `max_barrier` is allowed to converge on the same stack for different products
+  ("best barrier available" is product-independent). Do not "fix" that.
+
+Verified: `cd backend && python -m pytest -q` → **47 passed**.
+
+Not done yet: `routers/recommend.py` still calls `recommendations_for()` — the
+API does **not** serve the solver output until Task 4.
 
 ## 5. Context the next agent needs
 
