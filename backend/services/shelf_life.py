@@ -184,6 +184,28 @@ def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
+#: Food families that are wet by definition. Their water activity sits close to
+#: that of pure water regardless of a measured moisture content.
+_PERISHABLE_CATEGORIES = frozenset(
+    {"dairy", "beverages", "meatSeafood", "readyToEat", "fruitsVegetables"}
+)
+
+
+def estimate_water_activity(
+    category: str | None, moisture_pct: float = 0.0
+) -> float:
+    """Approximate water activity when the client did not measure it.
+
+    The product wizard collects moisture content, not Aw, so perishable
+    families are pinned near 1.0 and dry / semi-dry families are mapped from
+    their moisture content. This is an explicit approximation: prefer a
+    measured value whenever the client can supply one.
+    """
+    if normalize_category(category) in _PERISHABLE_CATEGORIES:
+        return 0.97
+    return clamp(0.20 + (moisture_pct or 0.0) * 0.03, 0.10, 0.95)
+
+
 # ---------------------------------------------------------------------------
 # Moisture
 # ---------------------------------------------------------------------------

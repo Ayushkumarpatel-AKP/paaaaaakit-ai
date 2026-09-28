@@ -27,6 +27,55 @@ def test_product_validation_rejects_bad_input(client, sample_product_payload):
     assert client.post("/products", json=bad_shelf).status_code == 422
 
 
+def test_water_activity_is_derived_when_not_measured(client, sample_product_payload):
+    """The wizard does not collect Aw, so the backend must estimate it."""
+    payload = {k: v for k, v in sample_product_payload.items() if k != "waterActivity"}
+
+    # A dry snack follows its moisture content.
+    dry = _create_product(client, {**payload, "moisturePct": 3.0})
+    assert 0.10 <= dry["waterActivity"] <= 0.99
+    assert dry["waterActivity"] < 0.5
+
+    # A wet family is pinned near pure water whatever the moisture figure says.
+    wet = _create_product(
+        client, {**payload, "category": "dairy", "moisturePct": 88.0}
+    )
+    assert wet["waterActivity"] > 0.9
+
+    # An explicit measurement always wins over the estimate.
+    measured = _create_product(client, {**payload, "waterActivity": 0.42})
+    assert measured["waterActivity"] == 0.42
+
+
+def test_product_accepts_wizard_measurements(client, sample_product_payload):
+    product = _create_product(
+        client,
+        {
+            **sample_product_payload,
+            "moisturePct": 2.5,
+            "ph": 6.2,
+            "relativeHumidityPct": 75.0,
+            "budgetPer1kUnits": 38.0,
+        },
+    )
+    assert product["moisturePct"] == 2.5
+    assert product["ph"] == 6.2
+    assert product["relativeHumidityPct"] == 75.0
+    assert product["budgetPer1kUnits"] == 38.0
+
+    # Out-of-range measurements are still rejected.
+    assert (
+        client.post("/products", json={**sample_product_payload, "ph": 20}).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/products", json={**sample_product_payload, "moisturePct": 140}
+        ).status_code
+        == 422
+    )
+
+
 def test_product_created_and_fetchable(client, sample_product_payload):
     product = _create_product(client, sample_product_payload)
     assert product["id"].startswith("prod_")

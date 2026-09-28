@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from services.shelf_life import estimate_water_activity
+
 Status = Literal["Optimal", "Warning", "Action Needed"]
 
 
@@ -19,7 +21,9 @@ Status = Literal["Optimal", "Warning", "Action Needed"]
 class ProductCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     category: str
-    waterActivity: float
+    #: Measured water activity. Leave unset to have the backend estimate it from
+    #: ``category`` + ``moisturePct`` — the product wizard does not collect Aw.
+    waterActivity: float | None = None
     fatContent: float = 0.0
     oxygenSensitivity: str = "medium"
     lightSensitivity: str = "medium"
@@ -30,12 +34,29 @@ class ProductCreate(BaseModel):
     budgetPer1kUnits: float = 0.0
     userId: str = "demo-user"
 
+    #: Straight from the product wizard, so recommendations can be sized against
+    #: the real product instead of a bundled sample.
+    moisturePct: float = Field(default=0.0, ge=0.0, le=100.0)
+    ph: float = Field(default=7.0, ge=0.0, le=14.0)
+    relativeHumidityPct: float = Field(default=60.0, ge=0.0, le=100.0)
+
     @field_validator("waterActivity")
     @classmethod
-    def _aw_range(cls, value: float) -> float:
+    def _aw_range(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
         if not 0.10 <= value <= 0.99:
             raise ValueError("waterActivity must be between 0.10 and 0.99")
         return value
+
+    @model_validator(mode="after")
+    def _fill_water_activity(self) -> "ProductCreate":
+        """Guarantee a concrete Aw so downstream physics never sees ``None``."""
+        if self.waterActivity is None:
+            self.waterActivity = estimate_water_activity(
+                self.category, self.moisturePct
+            )
+        return self
 
     @field_validator("targetShelfLifeDays")
     @classmethod

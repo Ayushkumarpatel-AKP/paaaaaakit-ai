@@ -5,7 +5,7 @@
 > **STATUS** table after every task and commit that update together with the
 > task's code. Commits are auto-pushed by `.githooks/post-commit`.
 
-Last updated: task 1 complete.
+Last updated: task 2 complete.
 
 ---
 
@@ -199,7 +199,7 @@ New `backend/services/stack_solver.py` (+ tests in `backend/tests/`).
 |---|---|---|---|
 | 0 | Handoff document | **DONE** | `1a90e0d` |
 | 1 | Flutter: use wizard inputs | **DONE** | (this commit) |
-| 2 | Backend: extend product schema | TODO | |
+| 2 | Backend: extend product schema | **DONE** | (this commit) |
 | 3 | Backend: stack solver | TODO | |
 | 4 | Backend: wire into /recommendations | TODO | |
 | 5 | Flutter: real values on result screen | TODO | |
@@ -237,6 +237,30 @@ The result screen still shows the hardcoded `matchScore` / `protection` /
 One approximation to be aware of: `waterActivity` is estimated from category +
 moisture content (`_estimateWaterActivity`) because the wizard has no Aw input.
 Task 2 should move that derivation to the backend so the API owns it.
+
+### Task 2 notes (for the next agent)
+
+Done:
+- `backend/services/shelf_life.py` → new `estimate_water_activity(category,
+  moisture_pct)`. Perishable families (`dairy, beverages, meatSeafood,
+  readyToEat, fruitsVegetables`) return 0.97; dry/semi-dry families map from
+  moisture content via `0.20 + moisturePct * 0.03`, clamped to 0.10-0.95.
+- `backend/models/schemas.py` → `ProductCreate` gains `moisturePct`, `ph`,
+  `relativeHumidityPct` (all range-validated) and `waterActivity` is now
+  `float | None = None` with a `model_validator(mode="after")` that fills it
+  from `estimate_water_activity()`. An explicit measured value still wins, and
+  out-of-range explicit values are still rejected with 422 (existing test kept).
+- `backend/models/schemas.py` now imports `services.shelf_life` — verified no
+  circular import (shelf_life only imports `services.categories`).
+- Two new tests in `backend/tests/test_api.py`:
+  `test_water_activity_is_derived_when_not_measured` and
+  `test_product_accepts_wizard_measurements`.
+
+Verified: `cd backend && python -m pytest -q` → **37 passed**.
+
+Important contract to preserve in Task 3/4: `test_recommendations_fall_back_without_key`
+asserts each tier still exposes `structure`, `otr_cc_m2_day` (> 0) and
+`layers`. Keep those keys when the solver replaces the templates.
 
 ## 5. Context the next agent needs
 
