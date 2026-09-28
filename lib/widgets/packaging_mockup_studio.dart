@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -18,6 +19,9 @@ import '../data/mockup_library.dart';
 ///
 /// The [mockups] list is supplied by the caller, so a product only ever sees the
 /// mockup shapes that belong to its own family.
+///
+/// Both the mockup `.glb` files and the `model-viewer` library are bundled
+/// assets, so the studio runs with no network connection at all.
 class PackagingMockupStudio extends StatefulWidget {
   /// Name printed nowhere on the model but used for messaging.
   final String productName;
@@ -53,8 +57,27 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
   PackagingMockup? _selectedMockup;
   InAppWebViewController? _webController;
 
+  /// Bundled `<model-viewer>` library, inlined into the viewer document so the
+  /// 3D preview never needs a network connection.
+  static const String _viewerScriptAsset =
+      'assets/model_viewer/model-viewer.min.js';
+  String _viewerScript = '';
+
   String _modelDataUri = '';
+
+  /// Set once the viewer document itself has loaded, so the 3D canvas is no
+  /// longer covered by the spinner.
+  bool _pageReady = false;
+
+  /// Set by the model's own `load` event, which means it is safe to stamp a
+  /// texture onto it.
   bool _modelLoaded = false;
+
+  /// The plugin renders the viewer in a `data:` iframe on web, whose opaque
+  /// origin blocks every Dart -> JS call. Only native builds can drive the
+  /// viewer, so the browser preview is view/rotate only.
+  bool get _canDriveViewer => !kIsWeb;
+
   String? _viewerError;
 
   File? _artwork;
@@ -69,7 +92,20 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
   @override
   void initState() {
     super.initState();
+    _loadViewerScript();
     _selectInitialMockup();
+  }
+
+  Future<void> _loadViewerScript() async {
+    try {
+      final script = await rootBundle.loadString(_viewerScriptAsset);
+      if (!mounted) return;
+      setState(() => _viewerScript = script);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() =>
+          _viewerError = 'The bundled 3D library could not be read.');
+    }
   }
 
   @override
@@ -98,6 +134,7 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
   Future<void> _loadMockup(PackagingMockup mockup) async {
     setState(() {
       _selectedMockup = mockup;
+      _pageReady = false;
       _modelLoaded = false;
       _viewerError = null;
       _modelDataUri = '';
@@ -143,6 +180,10 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
   }
 
   Future<void> _applyArtwork() async {
+    if (!_canDriveViewer) {
+      _showMessage('Artwork editing needs the Android app.');
+      return;
+    }
     if (_artwork == null) {
       _showMessage('Pehle artwork upload karo.');
       return;
@@ -202,7 +243,7 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
 
   String _viewerHtml() {
     final model = jsonEncode(_modelDataUri);
-    return '''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js"></script><style>html,body,model-viewer{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}model-viewer{--poster-color:transparent}</style></head><body><model-viewer id="model" src=$model camera-controls touch-action="pan-y" exposure="$_light" shadow-intensity="1"></model-viewer><script>const viewer=document.getElementById('model');viewer.addEventListener('load',()=>{window.flutter_inappwebview.callHandler('modelLoaded');});window.resetCamera=()=>viewer.resetTurntableRotation();window.setExposure=(value)=>{viewer.exposure=value;};window.applyArtwork=async(dataUri,x,y,scale,rotation)=>{const image=new Image();image.src=dataUri;await image.decode();const canvas=document.createElement('canvas');canvas.width=600;canvas.height=900;const ctx=canvas.getContext('2d');const ratio=image.width/image.height;let width=600,height=900;if(ratio>600/900)width=900*ratio;else height=600/ratio;ctx.translate(300,450);ctx.rotate(rotation*Math.PI/180);ctx.translate(-300,-450);ctx.drawImage(image,(600-width*scale)/2+x*6,(900-height*scale)/2+y*9,width*scale,height*scale);const texture=await viewer.createTexture(canvas.toDataURL('image/png'));let applied=0;viewer.model.materials.forEach(material=>{const pbr=material.pbrMetallicRoughness;if(!pbr)return;if(pbr.baseColorTexture&&pbr.baseColorTexture.setTexture){pbr.baseColorTexture.setTexture(texture);}else{pbr.baseColorTexture=texture;}applied+=1;});return applied;};</script></body></html>''';
+    return '''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><script type="module">$_viewerScript</script><style>html,body,model-viewer{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}model-viewer{--poster-color:transparent}</style></head><body><model-viewer id="model" src=$model camera-controls touch-action="pan-y" exposure="$_light" shadow-intensity="1"></model-viewer><script>const viewer=document.getElementById('model');const bridge=window.flutter_inappwebview;viewer.addEventListener('load',()=>{if(bridge&&bridge.callHandler)bridge.callHandler('modelLoaded');});window.resetCamera=()=>{if(viewer.resetTurntableRotation)viewer.resetTurntableRotation();};window.setExposure=(value)=>{viewer.exposure=value;};window.applyArtwork=async(dataUri,x,y,scale,rotation)=>{if(!viewer.model)return;const image=new Image();image.src=dataUri;await image.decode();const canvas=document.createElement('canvas');canvas.width=600;canvas.height=900;const ctx=canvas.getContext('2d');const ratio=image.width/image.height;let width=600,height=900;if(ratio>600/900)width=900*ratio;else height=600/ratio;ctx.translate(300,450);ctx.rotate(rotation*Math.PI/180);ctx.translate(-300,-450);ctx.drawImage(image,(600-width*scale)/2+x*6,(900-height*scale)/2+y*9,width*scale,height*scale);const texture=await viewer.createTexture(canvas.toDataURL('image/png'));let applied=0;viewer.model.materials.forEach(material=>{const pbr=material.pbrMetallicRoughness;if(!pbr)return;if(pbr.baseColorTexture&&pbr.baseColorTexture.setTexture){pbr.baseColorTexture.setTexture(texture);}else{pbr.baseColorTexture=texture;}applied+=1;});return applied;};</script></body></html>''';
   }
 
   @override
@@ -223,6 +264,10 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(isDark),
+          if (!_canDriveViewer) ...[
+            const SizedBox(height: 10),
+            _buildWebNotice(),
+          ],
           const SizedBox(height: 12),
           _buildMockupPicker(isDark),
           const SizedBox(height: 12),
@@ -264,7 +309,7 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
           ),
         ),
         TextButton.icon(
-          onPressed: _modelDataUri.isEmpty ? null : _resetView,
+          onPressed: (_modelDataUri.isEmpty || !_canDriveViewer) ? null : _resetView,
           icon: const Icon(Icons.restart_alt_rounded, size: 16),
           label: const Text('Reset view', style: TextStyle(fontSize: 11)),
           style: TextButton.styleFrom(
@@ -275,6 +320,33 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
           ),
         ),
       ],
+    );
+  }
+
+  /// The web build of the plugin cannot receive Dart -> JS calls, so say so
+  /// plainly instead of offering artwork buttons that silently do nothing.
+  Widget _buildWebNotice() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.35)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, size: 15, color: Color(0xFFB45309)),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Browser preview: you can rotate and zoom the mockup, but uploading artwork onto it '
+              'only works in the Android app.',
+              style: TextStyle(fontSize: 10.5, height: 1.35, color: Color(0xFF92400E)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -363,7 +435,7 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
       ),
       child: Stack(
         children: [
-          if (_modelDataUri.isNotEmpty)
+          if (_modelDataUri.isNotEmpty && _viewerScript.isNotEmpty)
             InAppWebView(
               key: ValueKey(_modelDataUri),
               initialData: InAppWebViewInitialData(data: _viewerHtml()),
@@ -385,6 +457,10 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
                     });
                   },
                 );
+              },
+              onLoadStop: (_, __) {
+                if (!mounted) return;
+                setState(() => _pageReady = true);
               },
               onReceivedError: (_, __, error) {
                 if (!mounted) return;
@@ -427,7 +503,7 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.wifi_off_rounded,
+                        const Icon(Icons.error_outline_rounded,
                             size: 26, color: Color(0xFFF43F5E)),
                         const SizedBox(height: 8),
                         Text(
@@ -438,7 +514,7 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'The 3D preview needs an internet connection.',
+                          'Try selecting another mockup.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 10.5,
@@ -453,7 +529,7 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
                 ),
               ),
             )
-          else if (!_modelLoaded)
+          else if (!_pageReady)
             Positioned.fill(
               child: Center(
                 child: Column(
@@ -481,7 +557,7 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
               ),
             ),
 
-          if (_modelLoaded)
+          if (_pageReady)
             Positioned(
               bottom: 10,
               left: 0,
@@ -563,7 +639,7 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
             const SizedBox(width: 10),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _modelLoaded ? _applyArtwork : null,
+                onPressed: (_modelLoaded && _canDriveViewer) ? _applyArtwork : null,
                 icon: const Icon(Icons.auto_fix_high_rounded, size: 17),
                 label: const Text(
                   'Apply to mockup',
@@ -631,7 +707,7 @@ class _PackagingMockupStudioState extends State<PackagingMockupStudio> {
                 max: 1.6,
                 divisions: 12,
                 activeColor: const Color(0xFF4F46E5),
-                onChanged: _setLight,
+                onChanged: _canDriveViewer ? _setLight : null,
               ),
             ),
             SizedBox(

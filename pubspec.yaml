@@ -65,6 +65,7 @@ flutter:
   # 3D packaging mockups, grouped by product family so the customizer can show
   # only the shapes that match the product being engineered.
   assets:
+    - assets/model_viewer/model-viewer.min.js
     - assets/mockups/chips/
     - assets/mockups/milk/
 
