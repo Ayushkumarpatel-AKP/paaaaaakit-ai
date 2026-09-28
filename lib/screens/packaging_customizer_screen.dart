@@ -3,7 +3,8 @@ import '../theme/app_theme.dart';
 import '../services/app_session.dart';
 import '../utils/currency.dart';
 import '../widgets/live_results_panel.dart';
-import '../widgets/package_3d_viewer.dart';
+import '../widgets/packaging_mockup_studio.dart';
+import '../data/mockup_library.dart';
 import '../models/food_item.dart';
 
 enum PackagingFormFactor {
@@ -45,30 +46,12 @@ class _PackagingCustomizerScreenState extends State<PackagingCustomizerScreen> {
   double _filmThickness = 99.0;
   double _packSizeGrams = 50.0;
   
-  // Design customization
+  // Design customization (how the artwork covers the pack).
   String _designLayout = 'full_print';
-  bool _hasMatteFinish = false;
-  bool _hasGlossSpot = false;
-  
-  // Printing options
-  String _printColorMode = 'full_color';
-  int _printSides = 1;
-  
-  // Barrier layers
-  bool _hasOxygenBarrier = true;
-  bool _hasMoistureBarrier = true;
-  bool _hasLightBarrier = false;
-  
-  // Sustainability
-  bool _preferRecyclable = true;
-  bool _preferCompostable = false;
-  bool _preferMonoMaterial = false;
 
   Map<String, dynamic>? _stack;
   bool _loading = false;
   bool _isLive = false;
-  String? _customMaterialName;
-  String? _customMaterialNotes;
 
   // Materials database for reference
   final Map<String, Map<String, dynamic>> _availableMaterials = {
@@ -361,16 +344,6 @@ class _PackagingCustomizerScreenState extends State<PackagingCustomizerScreen> {
                 _filmThickness = 99.0;
                 _packSizeGrams = 50.0;
                 _designLayout = 'full_print';
-                _hasMatteFinish = false;
-                _hasGlossSpot = false;
-                _printColorMode = 'full_color';
-                _printSides = 1;
-                _hasOxygenBarrier = true;
-                _hasMoistureBarrier = true;
-                _hasLightBarrier = false;
-                _preferRecyclable = true;
-                _preferCompostable = false;
-                _preferMonoMaterial = false;
               });
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -379,11 +352,6 @@ class _PackagingCustomizerScreenState extends State<PackagingCustomizerScreen> {
                 ),
               );
             },
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline_rounded),
-            onPressed: () => _showCustomMaterialDialog(context, isDark),
           ),
         ],
         elevation: 0,
@@ -474,8 +442,6 @@ class _PackagingCustomizerScreenState extends State<PackagingCustomizerScreen> {
                       _buildTopTab(1, 'Thickness'),
                       _buildTopTab(2, 'Design'),
                       _buildTopTab(3, 'Size'),
-                      _buildTopTab(4, 'Barrier'),
-                      _buildTopTab(5, 'Sustainability'),
                     ],
                   ),
                 ),
@@ -483,9 +449,11 @@ class _PackagingCustomizerScreenState extends State<PackagingCustomizerScreen> {
 
               const SizedBox(height: 14),
 
-              // 3D Viewer
-              Package3DViewer(
+              // 360° mockup studio. Only the mockup shapes that belong to the
+              // current product family are offered here.
+              PackagingMockupStudio(
                 productName: widget.aiRecommendedProduct?.name ?? 'Product',
+                mockups: MockupLibrary.forProduct(widget.aiRecommendedProduct),
                 materialType: _selectedMaterial,
                 filmThickness: _filmThickness,
                 packSizeGrams: _packSizeGrams,
@@ -514,10 +482,6 @@ class _PackagingCustomizerScreenState extends State<PackagingCustomizerScreen> {
         return _buildDesignTab(isDark);
       case 3:
         return _buildSizeTab(isDark);
-      case 4:
-        return _buildBarrierTab(isDark);
-      case 5:
-        return _buildSustainabilityTab(isDark);
       default:
         return _buildMaterialTab(isDark, materialInfo);
     }
@@ -932,38 +896,6 @@ class _PackagingCustomizerScreenState extends State<PackagingCustomizerScreen> {
             const Color(0xFF10B981),
             isDark,
           ),
-
-          const SizedBox(height: 16),
-
-          // Finish Options
-          Text(
-            'Surface Finish',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              _buildSwitchOption(
-                'Matte Finish',
-                'Smooth, non-reflective surface',
-                Icons.format_paint_rounded,
-                _hasMatteFinish,
-                isDark,
-              ),
-              const SizedBox(width: 12),
-              _buildSwitchOption(
-                'Gloss Spot',
-                'Glossy highlight on logo/brand',
-                Icons.auto_fix_high_rounded,
-                _hasGlossSpot,
-                isDark,
-              ),
-            ],
-          ),
         ],
       ),
     );
@@ -1028,61 +960,6 @@ class _PackagingCustomizerScreenState extends State<PackagingCustomizerScreen> {
             if (isSelected)
               const Icon(Icons.check_circle_rounded, color: Color(0xFF4F46E5), size: 18),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSwitchOption(
-    String title,
-    String subtitle,
-    IconData icon,
-    bool isSelected,
-    bool isDark,
-  ) {
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => isSelected = !isSelected),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? const Color(0xFF4F46E5).withValues(alpha: 0.15)
-                : (isDark ? const Color(0xFF1E293B) : Colors.white),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? const Color(0xFF4F46E5) : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 16, color: isSelected ? const Color(0xFF4F46E5) : const Color(0xFF94A3B8)),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: isSelected ? const Color(0xFF4F46E5) : (isDark ? Colors.white : const Color(0xFF1E293B)),
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -1164,496 +1041,11 @@ class _PackagingCustomizerScreenState extends State<PackagingCustomizerScreen> {
     );
   }
 
-  Widget _buildBarrierTab(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Barrier Layers',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Select protection requirements for your product:',
-            style: TextStyle(
-              fontSize: 12,
-              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          _buildBarrierOption(
-            'Oxygen Barrier',
-            'Prevents oxidation and rancidity',
-            'Critical for products with oil/fat content',
-            Icons.security_rounded,
-            const Color(0xFFF59E0B),
-            _hasOxygenBarrier,
-            isDark,
-          ),
-          const SizedBox(height: 10),
-          _buildBarrierOption(
-            'Moisture Barrier',
-            'Prevents moisture ingress and loss',
-            'Essential for crispy and dry products',
-            Icons.water_drop_rounded,
-            const Color(0xFF3B82F6),
-            _hasMoistureBarrier,
-            isDark,
-          ),
-          const SizedBox(height: 10),
-          _buildBarrierOption(
-            'Light Barrier',
-            'Blocks UV and visible light',
-            'Important for light-sensitive products',
-            Icons.wb_sunny_outlined,
-            const Color(0xFF10B981),
-            _hasLightBarrier,
-            isDark,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBarrierOption(
-    String title,
-    String description,
-    String note,
-    IconData icon,
-    Color color,
-    bool isSelected,
-    bool isDark,
-  ) {
-    return InkWell(
-      onTap: () => setState(() => isSelected = !isSelected),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? color.withValues(alpha: 0.15)
-              : (isDark ? const Color(0xFF1E293B) : Colors.white),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? color : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 18),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: isSelected ? color : (isDark ? Colors.white : const Color(0xFF1E293B)),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                    ),
-                  ),
-                  Text(
-                    note,
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: isSelected ? color : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9)),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isSelected ? color : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
-                ),
-              ),
-              child: Icon(
-                isSelected ? Icons.check_rounded : Icons.add,
-                size: 14,
-                color: isSelected ? Colors.white : const Color(0xFF94A3B8),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSustainabilityTab(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Sustainability Preferences',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Help us recommend eco-friendly options:',
-            style: TextStyle(
-              fontSize: 12,
-              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          _buildSustainabilityOption(
-            'Recyclable Materials',
-            'Priority on materials that can be recycled',
-            Icons.recycling_rounded,
-            const Color(0xFF3B82F6),
-            _preferRecyclable,
-            isDark,
-          ),
-          const SizedBox(height: 10),
-          _buildSustainabilityOption(
-            'Compostable Materials',
-            'Bio-based materials that compost industrially',
-            Icons.eco_rounded,
-            const Color(0xFF10B981),
-            _preferCompostable,
-            isDark,
-          ),
-          const SizedBox(height: 10),
-          _buildSustainabilityOption(
-            'Mono-Material Design',
-            'Single material type for easier recycling',
-            Icons.format_align_left_rounded,
-            const Color(0xFF8B5CF6),
-            _preferMonoMaterial,
-            isDark,
-          ),
-          const SizedBox(height: 16),
-
-          // Sustainability Score Estimate
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: isDark
-                    ? [const Color(0xFF1E1B4B), const Color(0xFF312E81)]
-                    : [const Color(0xFFEEF2FF), const Color(0xFFE0E7FF)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF818CF8).withValues(alpha: 0.4)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.eco_outlined, color: Color(0xFF4F46E5), size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Estimated Sustainability Score',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.2),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.eco_rounded, color: Color(0xFF10B981), size: 24),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'B+ Grade',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF10B981),
-                          ),
-                        ),
-                        Text(
-                          'Good eco-profile with selected options',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSustainabilityOption(
-    String title,
-    String description,
-    IconData icon,
-    Color color,
-    bool isSelected,
-    bool isDark,
-  ) {
-    return InkWell(
-      onTap: () => setState(() => isSelected = !isSelected),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? color.withValues(alpha: 0.15)
-              : (isDark ? const Color(0xFF1E293B) : Colors.white),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? color : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 18),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: isSelected ? color : (isDark ? Colors.white : const Color(0xFF1E293B)),
-                    ),
-                  ),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isSelected)
-              const Icon(Icons.check_circle_rounded, color: Color(0xFF4F46E5), size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-
   double _estimateCost() {
     // Simple cost estimation based on material and thickness
     final baseCost = _filmThickness * 0.02; // Base cost per pack
     final materialMultiplier = _selectedMaterial == 'bio' ? 1.3 : _selectedMaterial == 'alu_foil' ? 1.5 : 1.0;
     return baseCost * materialMultiplier;
-  }
-
-  void _showCustomMaterialDialog(BuildContext context, bool isDark) {
-    final nameController = TextEditingController();
-    final notesController = TextEditingController();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            top: MediaQuery.of(context).padding.top + 20,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4F46E5),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                child: const Row(
-                  children: [
-                    Text(
-                      'Add Custom Material',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(width: 8),
-                    Icon(Icons.add, color: Colors.white, size: 18),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Material Name',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: nameController,
-                      decoration: const InputDecoration(
-                        hintText: 'e.g. Custom Bio-Coating',
-                        border: OutlineInputBorder(),
-                        filled: true,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    Text(
-                      'Material Properties (Notes)',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: notesController,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        hintText: 'Describe barrier properties, cost, recyclability...',
-                        border: OutlineInputBorder(),
-                        filled: true,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Cancel'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () {
-                              if (nameController.text.isNotEmpty) {
-                                setState(() {
-                                  _customMaterialName = nameController.text;
-                                  _customMaterialNotes = notesController.text;
-                                });
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('✅ Custom material "$_customMaterialName" added to analysis'),
-                                    backgroundColor: const Color(0xFF10B981),
-                                  ),
-                                );
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF4F46E5),
-                            ),
-                            child: const Text('Add Material'),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline, size: 16, color: Color(0xFFB45309)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Custom materials will be included in AI analysis. If reliable data is not available, the system will notify you.',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: const Color(0xFF92400E),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   Widget _buildTopTab(int index, String title) {

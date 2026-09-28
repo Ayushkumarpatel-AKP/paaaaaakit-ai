@@ -191,6 +191,9 @@ class _MainShellState extends State<MainShell> {
 
       case 'customizer_3d':
         return PackagingCustomizerScreen(
+          // Drives the mockup family: a chips product only sees chips shapes,
+          // a dairy product only sees cartons/bottles.
+          aiRecommendedProduct: _currentProduct,
           onBack: () => _navigateTo('home'),
           onGenerated: () => _navigateTo('recommendation_result',
               arguments: _currentProduct),
