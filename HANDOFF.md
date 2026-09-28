@@ -5,7 +5,7 @@
 > **STATUS** table after every task and commit that update together with the
 > task's code. Commits are auto-pushed by `.githooks/post-commit`.
 
-Last updated: task 4 complete.
+Last updated: task 5 complete.
 
 ---
 
@@ -202,7 +202,7 @@ New `backend/services/stack_solver.py` (+ tests in `backend/tests/`).
 | 2 | Backend: extend product schema | **DONE** | (this commit) |
 | 3 | Backend: stack solver | **DONE** | (this commit) |
 | 4 | Backend: wire into /recommendations | **DONE** | (this commit) |
-| 5 | Flutter: real values on result screen | TODO | |
+| 5 | Flutter: real values on result screen | **DONE** | (this commit) |
 | 6 | Verify + document | TODO | |
 
 ### Task 1 notes (for the next agent)
@@ -337,6 +337,43 @@ New test: `test_recommendations_are_solved_for_each_product` in
 chips and milk receive *different* structures and costs end-to-end.
 
 Verified: `cd backend && python -m pytest -q` → **48 passed**.
+
+### Task 5 notes (for the next agent)
+
+`lib/screens/recommendation_result_screen.dart`:
+- **Tier→card mapping fixed.** Card 1 (the default-selected, formerly
+  "Recommended (MET)") now receives `max_barrier`; card 2 receives
+  `sustainability_first`. Previously card 1 was filled with the compostable
+  stack while labelled as metallised PET.
+- `_applyTier()` now writes solver-derived values over the literals:
+  `meetsTarget`, `withinBudget`, `isRecommended`, `badge` ('Meets target' /
+  'Below target'), `badgeColor`, `shelfLife`, `lifeDetail`, `limitingFactor`,
+  `recyclability`, `why`, `rationale`.
+- The hardcoded **'95% MATCH'** chip and the `'... (${matchScore}%)'` badge are
+  gone; both now render the tier's real status. `matchScore` and `protection`
+  are no longer displayed anywhere (`sealability` and `mechanical` spec rows
+  were removed outright — the backend never computed them).
+- New spec rows: **Limiting Factor**, **Recyclability**, and a
+  **Predicted Shelf Life vs target** row. New `_buildReasonsCard()` renders the
+  solver's `why` list plus the rationale, so the reasoning is visible.
+- Helpers added: `_formatDays()`, `_prettyFactor()`, `_buildReasonsCard()`.
+- **Deleted the dead "AI analysis" block**: `_analyzeProduct()`,
+  `_calculateConfidence()` (the fake 70-90 score) and `_generateRationale()`,
+  plus the `_analysisResult` map and the unused `_selectedFormFactor` field. It
+  was verified to be genuinely dead — `_analysisResult` was written but never
+  read by any widget, so the fake confidence score was never even shown. That
+  also removed the two pre-existing analyzer warnings and the unused
+  `sample_data.dart` import.
+
+**Offline fallback preserved:** when the backend is unreachable `_applyTier()`
+never runs and the bundled sample card is shown. The new spec rows therefore use
+`?? '—'` / `?? activeOption['shelfLife']` so they do not render "null".
+
+Verified: `flutter analyze` → **No issues found!** (the 2 legacy warnings are
+gone), `flutter test` → 2 passed.
+
+Not yet done: Task 6 (final cross-check + docs). The APK at the repo root is
+still the pre-Task-1 build — see "Optional / later".
 
 ## 5. Context the next agent needs
 

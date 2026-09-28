@@ -5,7 +5,6 @@ import '../services/app_session.dart';
 import '../utils/currency.dart';
 import '../widgets/layer_stack_widget.dart';
 import '../widgets/live_results_panel.dart';
-import '../data/sample_data.dart';
 
 class RecommendationResultScreen extends StatefulWidget {
   final FoodProduct product;
@@ -28,14 +27,11 @@ class RecommendationResultScreen extends StatefulWidget {
 
 class _RecommendationResultScreenState
     extends State<RecommendationResultScreen> {
-  int _selectedOptionIndex = 1; // 0: Standard, 1: Recommended, 2: Eco-Friendly
-  final int _selectedFormFactor = 0; // 0: Pouch, 1: Container, 2: Vacuum, 3: Film
+  // 0 = lowest cost, 1 = strongest barrier (default), 2 = most recyclable.
+  int _selectedOptionIndex = 1;
 
   bool _recoLive = false;
   bool _recoLoading = false;
-
-  // AI Analysis data based on user inputs
-  Map<String, dynamic> _analysisResult = {};
 
   static const Map<String, String> _materialLabels = {
     'pet': 'PET',
@@ -90,76 +86,130 @@ class _RecommendationResultScreenState
       );
       if (!mounted) return;
       setState(() {
+        // Card order matches the roles the user reads:
+        // 0 = cheapest, 1 = strongest barrier (the default/recommended card),
+        // 2 = most recyclable. Previously card 1 was labelled "Recommended (MET)"
+        // but was filled with the compostable stack.
         _applyTier(0, reco['cost_optimized']);
-        _applyTier(1, reco['sustainability_first']);
-        _applyTier(2, reco['max_barrier']);
+        _applyTier(1, reco['max_barrier']);
+        _applyTier(2, reco['sustainability_first']);
         _recoLive = true;
         _recoLoading = false;
       });
-      _analyzeProduct();
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _recoLive = false;
         _recoLoading = false;
       });
-      _analyzeProduct();
     }
   }
 
-  /// AI-powered analysis of user inputs to generate intelligent recommendations
-  void _analyzeProduct() {
-    final productData = widget.product;
-    
-    // Analyze based on product characteristics
-    final moistureHigh = productData.moistureContent > 20;
-    final oilHigh = productData.oilFatContent > 20;
-    final phLow = productData.phValue < 4.6;
-    final shelfLifeLong = productData.defaultShelfLifeMonths > 3;
-    
-    setState(() {
-      _analysisResult = {
-        'moistureRisk': moistureHigh ? 'High moisture requires strong water vapor barrier' : 'Low moisture - less barrier needed',
-        'oxidationRisk': oilHigh ? 'High fat content - needs oxygen barrier to prevent rancidity' : 'Low fat - minimal oxidation risk',
-        'pHProtection': phLow ? 'Acidic food - metal corrosion risk, use coated materials' : 'Neutral pH - standard materials suitable',
-        'shelfLifeRequirement': shelfLifeLong ? 'Extended shelf life needed - premium barrier recommended' : 'Short shelf life - standard packaging sufficient',
-        'confidenceScore': _calculateConfidence(),
-        'recommendationRationale': _generateRationale(),
-      };
-    });
+  /// Formats an engineering day count the way a buyer reads it.
+  String _formatDays(double days) {
+    if (days <= 0) return '—';
+    if (days < 60) return '${days.round()} days';
+    return '${(days / 30.0).toStringAsFixed(1)} months';
   }
 
-  int _calculateConfidence() {
-    // Calculate confidence based on data completeness
-    int score = 70; // Base confidence
-    
-    // Higher confidence with more data points
-    if (widget.product.moistureContent > 0) score += 5;
-    if (widget.product.oilFatContent > 0) score += 5;
-    if (widget.product.phValue > 0) score += 5;
-    if (widget.product.defaultShelfLifeMonths > 0) score += 5;
-    
-    return score.clamp(0, 100);
+  /// Turns the engine's limiting-factor key into readable text.
+  String _prettyFactor(String factor) {
+    switch (factor) {
+      case 'moisture':
+        return 'Moisture gain';
+      case 'oxidation':
+        return 'Oxidation (peroxide value)';
+      case 'microbial':
+        return 'Microbial growth';
+      case 'quality':
+        return 'Quality decay';
+      case 'none':
+        return 'Nothing failed in the test window';
+      default:
+        return '—';
+    }
   }
 
-  String _generateRationale() {
-    final analysis = _analysisResult;
-    final rationales = <String>[];
-    
-    if (analysis['oxidationRisk']?.toString().contains('High') ?? false) {
-      rationales.add('High oxygen barrier recommended due to fat content');
-    }
-    if (analysis['moistureRisk']?.toString().contains('High') ?? false) {
-      rationales.add('Strong moisture barrier needed for product freshness');
-    }
-    if (analysis['pHProtection']?.toString().contains('Acidic') ?? false) {
-      rationales.add('Corrosion-resistant materials selected for acidic product');
-    }
-    if (rationales.isEmpty) {
-      rationales.add('Standard packaging suitable for product characteristics');
-    }
-    
-    return rationales.join('. ');
+  /// The solver's reasoning, in plain language. Every line comes from the
+  /// backend — the screen never invents a justification.
+  Widget _buildReasonsCard(Map<String, dynamic> option, bool isDark) {
+    final reasons = (option['why'] as List?)?.cast<String>() ?? const <String>[];
+    final rationale = '${option['rationale'] ?? ''}'.trim();
+    if (reasons.isEmpty && rationale.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.psychology_outlined,
+                  size: 16, color: Color(0xFF4F46E5)),
+              const SizedBox(width: 8),
+              Text(
+                'Why this stack',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...reasons.map(
+            (reason) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 5),
+                    child: Icon(Icons.circle,
+                        size: 5, color: Color(0xFF4F46E5)),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      reason,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        height: 1.35,
+                        color: isDark
+                            ? const Color(0xFFCBD5E1)
+                            : const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (rationale.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              rationale,
+              style: TextStyle(
+                fontSize: 11.5,
+                height: 1.35,
+                fontStyle: FontStyle.italic,
+                color: isDark
+                    ? const Color(0xFF94A3B8)
+                    : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   void _applyTier(int index, dynamic tier) {
@@ -179,6 +229,32 @@ class _RecommendationResultScreenState
     if (costPerUnit != null) option['cost'] = formatInr(costPerUnit);
     if (costPer1k != null) option['costPer1k'] = '${formatInr(costPer1k)} / 1k';
     if (thickness != null) option['thickness'] = '${thickness.toStringAsFixed(0)} µm (Total)';
+
+    // Honest, solver-derived values. Everything below comes from the backend's
+    // physics solver — none of it is a UI constant.
+    final meetsTarget = tier['meets_target'] == true;
+    final life = (tier['predicted_shelf_life_days'] as num?)?.toDouble();
+    final targetLife = (tier['target_shelf_life_days'] as num?)?.toDouble();
+    final recyclability = (tier['recyclability_score'] as num?)?.toDouble();
+
+    option['meetsTarget'] = meetsTarget;
+    option['withinBudget'] = tier['within_budget'] == true;
+    option['isRecommended'] = meetsTarget;
+    option['badge'] = meetsTarget ? 'Meets target' : 'Below target';
+    option['badgeColor'] =
+        meetsTarget ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
+    if (life != null) option['shelfLife'] = _formatDays(life);
+    option['lifeDetail'] = life == null
+        ? '—'
+        : '${_formatDays(life)} vs target ${_formatDays(targetLife ?? 0)}';
+    option['limitingFactor'] = _prettyFactor('${tier['limiting_factor'] ?? ''}');
+    option['recyclability'] = recyclability == null
+        ? '—'
+        : '${recyclability.toStringAsFixed(0)} / 100 '
+            '(${tier['recyclability_grade'] ?? '—'})';
+    option['why'] =
+        (tier['why'] as List?)?.map((entry) => '$entry').toList() ?? const [];
+    option['rationale'] = '${tier['rationale'] ?? ''}';
 
     final rawLayers = tier['layers'];
     if (rawLayers is List && rawLayers.isNotEmpty) {
@@ -491,9 +567,9 @@ class _RecommendationResultScreenState
                                     color: const Color(0xFF10B981),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
-                                  child: const Text(
-                                    '95% MATCH',
-                                    style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.bold),
+                                  child: Text(
+                                    '${opt['badge']}',
+                                    style: const TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.bold),
                                   ),
                                 ),
                               Text(
@@ -577,7 +653,7 @@ class _RecommendationResultScreenState
                           ],
                         ),
                         child: Text(
-                          '${activeOption['badge']} (${activeOption['matchScore']}%)',
+                          '${activeOption['badge']}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10.5,
@@ -625,14 +701,27 @@ class _RecommendationResultScreenState
                     _buildSpecRow('OTR (Oxygen Transmission)', activeOption['otr'] as String, isDark),
                     _buildSpecRow('WVTR (Water Vapor Transmission)', activeOption['wvtr'] as String, isDark),
                     _buildSpecRow('Film Thickness', activeOption['thickness'] as String, isDark),
-                    _buildSpecRow('Sealability Rating', activeOption['sealability'] as String, isDark),
-                    _buildSpecRow('Mechanical Strength', activeOption['mechanical'] as String, isDark),
-                    _buildSpecRow('Predicted Shelf Life', activeOption['shelfLife'] as String, isDark, isLast: true),
+                    // These three come from the solver. When the backend is
+                    // unreachable the bundled sample card is shown instead, so
+                    // fall back to the sample's own shelf-life text.
+                    _buildSpecRow('Limiting Factor',
+                        '${activeOption['limitingFactor'] ?? '—'}', isDark),
+                    _buildSpecRow('Recyclability',
+                        '${activeOption['recyclability'] ?? '—'}', isDark),
+                    _buildSpecRow(
+                        'Predicted Shelf Life',
+                        '${activeOption['lifeDetail'] ?? activeOption['shelfLife']}',
+                        isDark,
+                        isLast: true),
                     if (activeOption['costPer1k'] != null)
                       _buildSpecRow('Price (1k units)', activeOption['costPer1k'] as String, isDark),
                   ],
                 ),
               ),
+
+              const SizedBox(height: 14),
+
+              _buildReasonsCard(activeOption, isDark),
 
               const SizedBox(height: 16),
             ],
