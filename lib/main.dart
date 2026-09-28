@@ -91,10 +91,92 @@ class _MainShellState extends State<MainShell> {
         _currentProduct = arguments;
       }
     });
+  }  /// The category the user picked in the wizard. `completeData['category']` is a
+  /// [FoodCategory] enum; older callers may pass a label string.
+  FoodCategory _categoryFrom(Map<String, dynamic> data, FoodCategory fallback) {
+    final raw = data['category'];
+    if (raw is FoodCategory) return raw;
+    final text = '${raw ?? ''}'.toLowerCase();
+    if (text.isEmpty) return fallback;
+    for (final category in FoodCategory.values) {
+      if (text.contains(category.name.toLowerCase()) ||
+          text.contains(category.label.toLowerCase())) {
+        return category;
+      }
+    }
+    return fallback;
+  }
+
+  /// Water activity is not measured anywhere in the wizard, so estimate it from
+  /// the food family and moisture content. Fresh/perishable families sit near
+  /// 1.0; dry products follow their moisture content. Replace with a real
+  /// measurement when one becomes available.
+  double _estimateWaterActivity(FoodCategory category, double moisturePct) {
+    switch (category) {
+      case FoodCategory.dairy:
+      case FoodCategory.beverages:
+      case FoodCategory.meatSeafood:
+      case FoodCategory.readyToEat:
+      case FoodCategory.fruitsVegetables:
+        return 0.97;
+      case FoodCategory.snacks:
+      case FoodCategory.bakery:
+      case FoodCategory.grainsPulses:
+      case FoodCategory.others:
+        return (0.20 + moisturePct * 0.03).clamp(0.10, 0.95);
+    }
+  }
+
+  /// Best-effort template lookup by name. Only supplies values the wizard does
+  /// not collect — never anything that drives the physics.
+  FoodProduct _closestSample(String name) {
+    final needle = name.trim().toLowerCase();
+    if (needle.isEmpty) return SampleData.products[0];
+    return SampleData.products.firstWhere(
+      (p) =>
+          p.name.toLowerCase().contains(needle) ||
+          needle.contains(p.name.toLowerCase()),
+      orElse: () => SampleData.products[0],
+    );
+  }
+
+  /// Builds the product the user actually described, using a bundled sample only
+  /// as a template for the fields the wizard never collects (reference layer
+  /// stack, messaging strings).
+  FoodProduct _productFromInputs(
+    Map<String, dynamic> data,
+    FoodProduct template,
+  ) {
+    final category = _categoryFrom(data, template.category);
+    final name = '${data['name'] ?? ''}'.trim();
+    return FoodProduct(
+      id: template.id,
+      name: name.isEmpty ? template.name : name,
+      category: category,
+      imageUrl: '${data['imageUrl'] ?? template.imageUrl}',
+      moistureContent: (data['moisture'] as num?)?.toDouble() ??
+          template.moistureContent,
+      oilFatContent:
+          (data['oilFat'] as num?)?.toDouble() ?? template.oilFatContent,
+      phValue: (data['ph'] as num?)?.toDouble() ?? template.phValue,
+      waterActivity: template.waterActivity,
+      defaultShelfLifeMonths: template.defaultShelfLifeMonths,
+      recommendedLayers: template.recommendedLayers,
+      otr: template.otr,
+      wvtr: template.wvtr,
+      totalThickness: template.totalThickness,
+      sealability: template.sealability,
+      mechanicalStrength: template.mechanicalStrength,
+      mapSuitability: template.mapSuitability,
+      matchScore: template.matchScore,
+    );
   }
 
   /// Creates the product on the backend so every downstream screen (auditor,
   /// recommendations, digital twin, LCA, reports) has a real `productId`.
+  ///
+  /// Every field comes from what the user entered in the wizard — `matched` is
+  /// only a fallback for values the form does not collect.
   Future<void> _registerProduct(
     Map<String, dynamic> completeData,
     FoodProduct matched,
@@ -102,29 +184,40 @@ class _MainShellState extends State<MainShell> {
     final shelfLifeDays = _resolveShelfLifeDays(completeData);
     final storageTemp =
         ((completeData['storageTemp'] as num?)?.toDouble() ?? 25.0);
-    final categoryName = matched.category.name;
+    final humidity =
+        ((completeData['humidity'] as num?)?.toDouble() ?? 60.0);
+    final category = _categoryFrom(completeData, matched.category);
 
-    final highSensitivity = const {
-      'meatSeafood',
-      'dairy',
-      'readyToEat',
-      'bakery',
-    }.contains(categoryName);
+    final moisture = (completeData['moisture'] as num?)?.toDouble() ?? 0.0;
+    final fat = (completeData['oilFat'] as num?)?.toDouble() ?? 0.0;
+    final ph = (completeData['ph'] as num?)?.toDouble() ?? 7.0;
+    final budget = (completeData['budgetMax'] as num?)?.toDouble() ?? 0.0;
+    final productName = '${completeData['name'] ?? ''}'.trim();
+
+    // Sensitivity is derived from the product's own numbers instead of a
+    // hardcoded list of category names.
+    final oxygenSensitivity = fat >= 20
+        ? 'high'
+        : (fat >= 5 || moisture >= 30 ? 'medium' : 'low');
+    final lightSensitivity = (fat >= 20 || storageTemp > 30) ? 'high' : 'medium';
 
     try {
       final product = await AppSession.instance.api.createProduct({
-        'name': completeData['name'] ?? matched.name,
-        'category': categoryName,
-        'waterActivity': matched.waterActivity.clamp(0.10, 0.99),
-        'fatContent': (completeData['oilFat'] as num?)?.toDouble() ??
-            matched.oilFatContent,
-        'oxygenSensitivity': highSensitivity ? 'high' : 'medium',
-        'lightSensitivity': highSensitivity ? 'high' : 'medium',
+        'name': productName.isEmpty ? matched.name : productName,
+        'category': category.name,
+        'waterActivity': _estimateWaterActivity(category, moisture),
+        'fatContent': fat,
+        'oxygenSensitivity': oxygenSensitivity,
+        'lightSensitivity': lightSensitivity,
         'targetShelfLifeDays': shelfLifeDays,
         'minTempC': storageTemp - 5,
         'maxTempC': storageTemp + 5,
-        'packagingFormat': '${matched.category.label} flexible laminate',
-        'budgetPer1kUnits': 40.0,
+        'packagingFormat': '${category.label} flexible laminate',
+        'budgetPer1kUnits': budget,
+        // Consumed once the backend schema accepts them.
+        'moisturePct': moisture,
+        'ph': ph,
+        'relativeHumidityPct': humidity,
       });
       AppSession.instance.rememberProduct('${product['id']}');
     } catch (_) {
@@ -134,7 +227,10 @@ class _MainShellState extends State<MainShell> {
   }
 
   int _resolveShelfLifeDays(Map<String, dynamic> data) {
-    final value = (data['desiredShelfLife'] as num?)?.toDouble() ?? 6.0;
+    // The wizard writes `expectedShelfLife`; keep the old key as a fallback.
+    final value = (data['expectedShelfLife'] ?? data['desiredShelfLife'] as num?)
+            ?.toDouble() ??
+        6.0;
     final unit = '${data['shelfLifeUnit'] ?? 'Months'}';
     final days = switch (unit) {
       'Days' => value,
@@ -169,15 +265,15 @@ class _MainShellState extends State<MainShell> {
           productData: _currentProductData,
           onBack: _navigateBack,
           onGetRecommendation: (completeData) async {
-            // Find or synthesize food product
-            final productName = completeData['name'] ?? 'Potato Chips';
-            final matched = SampleData.products.firstWhere(
-              (p) =>
-                  p.name.toLowerCase().contains(productName.toString().toLowerCase()),
-              orElse: () => SampleData.products[0],
-            );
-            await _registerProduct(completeData, matched);
-            _navigateTo('recommendation_result', arguments: matched);
+            // A bundled sample is used only as a template for the fields the
+            // wizard never asks for (reference layer stack, marketing copy).
+            final template = _closestSample('${completeData['name'] ?? ''}');
+            // The product the user actually described. This — not the sample —
+            // drives the backend spec, the mockup family and every number the
+            // result screen shows.
+            final described = _productFromInputs(completeData, template);
+            await _registerProduct(completeData, described);
+            _navigateTo('recommendation_result', arguments: described);
           },
         );
 

@@ -5,7 +5,7 @@
 > **STATUS** table after every task and commit that update together with the
 > task's code. Commits are auto-pushed by `.githooks/post-commit`.
 
-Last updated: task 0 (handoff created).
+Last updated: task 1 complete.
 
 ---
 
@@ -197,13 +197,46 @@ New `backend/services/stack_solver.py` (+ tests in `backend/tests/`).
 
 | # | Task | Status | Commit |
 |---|---|---|---|
-| 0 | Handoff document | **DONE** | (this commit) |
-| 1 | Flutter: use wizard inputs | TODO | |
+| 0 | Handoff document | **DONE** | `1a90e0d` |
+| 1 | Flutter: use wizard inputs | **DONE** | (this commit) |
 | 2 | Backend: extend product schema | TODO | |
 | 3 | Backend: stack solver | TODO | |
 | 4 | Backend: wire into /recommendations | TODO | |
 | 5 | Flutter: real values on result screen | TODO | |
 | 6 | Verify + document | TODO | |
+
+### Task 1 notes (for the next agent)
+
+Done in `lib/main.dart`:
+- `_registerProduct()` now builds the `POST /products` spec from
+  `completeData` (the wizard + storage screens) instead of the matched sample.
+- New helpers: `_categoryFrom()`, `_estimateWaterActivity()`,
+  `_productFromInputs()`, `_closestSample()`.
+- Sample lookup is now fallback-only. `_navigateTo('recommendation_result',
+  arguments: described)` passes the **user's** product, so the result screen and
+  the mockup family follow the category the user picked. Typing "biscuits" and
+  choosing Bakery no longer silently becomes Potato Chips.
+- **Fixed a second silent bug:** `_resolveShelfLifeDays()` read
+  `desiredShelfLife`, but the wizard writes `expectedShelfLife`, so the shelf
+  life slider was dead and every product got the 6-month default. Now reads
+  `expectedShelfLife` with the old key as a fallback.
+- Sensitivity flags are derived from fat %/moisture/temp instead of the
+  hardcoded `{meatSeafood, dairy, readyToEat, bakery}` set.
+- `budgetPer1kUnits` now sends the user's `budgetMax` (was hardcoded `40.0`).
+- Also sends `moisturePct`, `ph`, `relativeHumidityPct`. Pydantic ignores
+  unknown fields today, so this is safe **before** Task 2 lands — but those
+  values do nothing until Task 2 adds them to `ProductCreate`.
+
+Verified: `flutter analyze` clean (same 2 pre-existing warnings), `flutter test` passes.
+
+Still true after Task 1: the backend still returns the three fixed templates
+(`fallback.py`), so the *stacks* are not yet product-specific — that is Task 3/4.
+The result screen still shows the hardcoded `matchScore` / `protection` /
+`shelfLife` literals — that is Task 5.
+
+One approximation to be aware of: `waterActivity` is estimated from category +
+moisture content (`_estimateWaterActivity`) because the wizard has no Aw input.
+Task 2 should move that derivation to the backend so the API owns it.
 
 ## 5. Context the next agent needs
 
