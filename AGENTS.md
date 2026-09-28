@@ -29,7 +29,7 @@ That means **the commit is safe locally but not on GitHub.** Re-run `git push or
 | `backend/` | FastAPI service — routers, physics services, LLM proxy |
 | `android/` | Android host project (Gradle, Kotlin) |
 | `test/` | Flutter widget tests |
-| `PackIT_AI_v1.0.apk` | Committed release build, ~47.8 MB |
+| `PackIT_AI_v1.0.apk` | Committed release build, ~54.6 MB |
 
 ## Build & test
 

@@ -11,7 +11,7 @@ A pre-built release APK is committed at the repo root — no build tools needed.
 | | |
 |---|---|
 | **File** | [`PackIT_AI_v1.0.apk`](https://github.com/Ayushkumarpatel-AKP/paaaaaakit-ai/raw/main/PackIT_AI_v1.0.apk) |
-| **Size** | ~47.8 MB |
+| **Size** | ~54.6 MB |
 | **Built** | 27 Sep 2026 · `flutter build apk --release` (Flutter 3.35.3) |
 
 [![Download PackIT AI APK](https://img.shields.io/badge/Download-PackIT__AI__v1.0.apk-00F2FE?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Ayushkumarpatel-AKP/paaaaaakit-ai/raw/main/PackIT_AI_v1.0.apk)
