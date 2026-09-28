@@ -5,7 +5,7 @@
 > **STATUS** table after every task and commit that update together with the
 > task's code. Commits are auto-pushed by `.githooks/post-commit`.
 
-Last updated: task 5 complete.
+Last updated: task 6 complete — **all planned tasks are done.**
 
 ---
 
@@ -203,7 +203,7 @@ New `backend/services/stack_solver.py` (+ tests in `backend/tests/`).
 | 3 | Backend: stack solver | **DONE** | (this commit) |
 | 4 | Backend: wire into /recommendations | **DONE** | (this commit) |
 | 5 | Flutter: real values on result screen | **DONE** | (this commit) |
-| 6 | Verify + document | TODO | |
+| 6 | Verify + document | **DONE** | (this commit) |
 
 ### Task 1 notes (for the next agent)
 
@@ -374,6 +374,70 @@ gone), `flutter test` → 2 passed.
 
 Not yet done: Task 6 (final cross-check + docs). The APK at the repo root is
 still the pre-Task-1 build — see "Optional / later".
+
+### Task 6 notes — final verification
+
+All green:
+- `cd backend && python -m pytest -q` → **48 passed**
+- `flutter analyze` → **No issues found!** (the 2 legacy warnings are gone)
+- `flutter test` → 2 passed
+
+End-to-end smoke (real `TestClient` against `POST /products` +
+`POST /recommendations/generate`), showing the tiers now track the product:
+
+| Product | tier | life vs target | limited by | ₹/1k | stack |
+|---|---|---|---|---|---|
+| Potato Chips (35% fat, 180 d, aw 0.29) | cost | 185 / 180 | moisture | 1006 | Paperboard / Met-PET 15 / LDPE 40 |
+| Potato Chips | max barrier | 221 / 180 | quality | 1181 | PET 12 / Alu-foil 9 / LDPE 40 |
+| Pasteurized Milk (3.5% fat, 14 d, aw 0.97) | cost | 30 / 14 | none | 687 | Paperboard / LDPE 40 **(no barrier core)** |
+| Biscuits (22% fat, 120 d, aw 0.32) | cost | 145 / 120 | quality | 687 | Paperboard / LDPE 40 |
+
+Every tier reports `within_budget: true` against the wizard's real budget
+(₹1000-5000 per 1k units). Before this work every product returned the same
+three templates and the budget was ignored entirely.
+
+---
+
+## 6. Known limitations — be honest about these, do not paper over them
+
+1. **`limiting_factor: "none"` means "nothing failed inside the test window",
+   not "it will last forever".** For short-life chilled products (milk) the
+   window closes before any threshold is crossed. The UI renders this as
+   "Nothing failed in the test window".
+2. **The milk result is optimistic for real dairy.** The model has no light
+   barrier, no headspace-oxygen/pasteurisation term and no package-integrity
+   term, so it concludes a paperboard/LDPE pouch holds pasteurised milk for 14
+   days at 5 °C. Treat that tier as "cheapest stack the model cannot fault",
+   not as a validated dairy pack.
+3. **`waterActivity` is estimated** (Task 2) from category + moisture unless the
+   client measures it. Add an Aw field to the wizard when a real value becomes
+   available.
+4. **`recyclability_score` is the shared LCA engine's mass-weighted number.**
+   Heavy, low-impact layers can make a 3-material laminate look greener than it
+   is in practice. The solver exposes `distinct_material_count` and
+   `compostable` so the UI can add nuance; it deliberately does not fork the LCA
+   scoring, because the LCA screen must agree.
+5. **The search grid is a design choice, not a truth.** `OUTER_OPTIONS`,
+   `BARRIER_OPTIONS`, `SEALANT_OPTIONS` bound what can be recommended. Widen
+   them to widen the answers.
+6. **The LLM path is untested** (no key in this environment) — see Task 4 notes.
+7. **Sensitivity flags** (`oxygenSensitivity`, `lightSensitivity`) are derived in
+   the Flutter client but the solver does not consume them yet. They are stored
+   and shown; wiring them into the barrier requirement would be a genuine next
+   improvement.
+
+## 7. Suggested next work
+
+1. Rebuild + commit the APK (see "Optional / later") so the shipped build has
+   all of this.
+2. Feed `oxygenSensitivity` / `lightSensitivity` and `ph` into the solver's
+   requirement step (light barrier for photo-oxidation, acid-resistant sealant
+   for pH < 4.6).
+3. Add a light-barrier material (e.g. pigmented/metallised film without foil) to
+   `material_db` so `max_barrier` is not forced to aluminium for dairy.
+4. Show `required_mvtr` / `required_otr` explicitly — the solver computes a
+   feasible set but does not currently report the threshold it was solving for.
+5. Surface the `why` list in the PDF report (`services/projects.py` builds it).
 
 ## 5. Context the next agent needs
 
