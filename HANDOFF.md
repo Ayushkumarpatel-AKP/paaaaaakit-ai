@@ -5,7 +5,7 @@
 > **STATUS** table after every task and commit that update together with the
 > task's code. Commits are auto-pushed by `.githooks/post-commit`.
 
-Last updated: task 3 complete.
+Last updated: task 4 complete.
 
 ---
 
@@ -201,7 +201,7 @@ New `backend/services/stack_solver.py` (+ tests in `backend/tests/`).
 | 1 | Flutter: use wizard inputs | **DONE** | (this commit) |
 | 2 | Backend: extend product schema | **DONE** | (this commit) |
 | 3 | Backend: stack solver | **DONE** | (this commit) |
-| 4 | Backend: wire into /recommendations | TODO | |
+| 4 | Backend: wire into /recommendations | **DONE** | (this commit) |
 | 5 | Flutter: real values on result screen | TODO | |
 | 6 | Verify + document | TODO | |
 
@@ -307,6 +307,36 @@ Verified: `cd backend && python -m pytest -q` → **47 passed**.
 
 Not done yet: `routers/recommend.py` still calls `recommendations_for()` — the
 API does **not** serve the solver output until Task 4.
+
+### Task 4 notes (for the next agent)
+
+`backend/routers/recommend.py` rewritten:
+- `POST /recommendations/generate` now runs `solve_recommendations(product)`
+  first and treats its output as the answer.
+- `_merge_with_fallback()` is **gone**. It let the LLM overwrite numbers and
+  could desync `structure` from `layers`. Replaced by `_guard_tiers()`, which
+  only fills a required key if the solver somehow omitted it.
+- The LLM is now constrained to prose: `_apply_llm_prose()` reads **only** the
+  `rationale` string per tier and sets `rationale_source = "llm"`. Materials,
+  thicknesses and all numbers stay as solved. `used_llm` is True only when at
+  least one rationale was actually applied.
+- `services/prompts.py`: `RECOMMEND_SYSTEM` rewritten to "explain, never invent"
+  and `recommend_user_prompt(product, tiers=None)` now receives the solved
+  stacks. The old prompt asked the model to generate numbers — that is the whole
+  bug this task removes.
+- `DISCLAIMER` updated (it no longer claims an AI estimate as the source of the
+  numbers).
+
+**LLM path is untested.** No `OPENAI_API_KEY` exists in this environment, so
+`client.enabled` is always False and the `_apply_llm_prose` branch never runs.
+It is written defensively (any malformed reply leaves the solver's rationale in
+place and keeps `used_llm` False) but a future agent with a key should test it.
+
+New test: `test_recommendations_are_solved_for_each_product` in
+`backend/tests/test_api.py` — asserts the solver fields are exposed and that
+chips and milk receive *different* structures and costs end-to-end.
+
+Verified: `cd backend && python -m pytest -q` → **48 passed**.
 
 ## 5. Context the next agent needs
 

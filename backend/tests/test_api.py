@@ -152,6 +152,71 @@ def test_recommendations_fall_back_without_key(client, sample_product_payload):
     assert latest["id"] == body["id"]
 
 
+def test_recommendations_are_solved_for_each_product(client, sample_product_payload):
+    """End-to-end: the API must answer per product, not with fixed templates."""
+    chips = _create_product(
+        client,
+        {
+            **sample_product_payload,
+            "moisturePct": 3.0,
+            "ph": 6.5,
+            "relativeHumidityPct": 60.0,
+            "budgetPer1kUnits": 3000.0,
+        },
+    )
+    milk = _create_product(
+        client,
+        {
+            **sample_product_payload,
+            "name": "Pasteurized Milk",
+            "category": "dairy",
+            "waterActivity": 0.97,
+            "fatContent": 3.5,
+            "targetShelfLifeDays": 14,
+            "minTempC": 2.0,
+            "maxTempC": 8.0,
+            "moisturePct": 88.0,
+            "budgetPer1kUnits": 5000.0,
+        },
+    )
+
+    chips_reco = client.post(
+        "/recommendations/generate", json={"productId": chips["id"]}
+    ).json()
+    milk_reco = client.post(
+        "/recommendations/generate", json={"productId": milk["id"]}
+    ).json()
+
+    for tier in ("cost_optimized", "sustainability_first", "max_barrier"):
+        payload = chips_reco[tier]
+        # Solver-derived fields the result screen now depends on.
+        assert payload["target_shelf_life_days"] == 180.0
+        assert isinstance(payload["meets_target"], bool)
+        assert payload["predicted_shelf_life_days"] > 0
+        assert payload["limiting_factor"]
+        assert payload["why"]
+        assert payload["rationale"]
+
+    # The whole point: two different products get two different answers.
+    assert (
+        chips_reco["cost_optimized"]["structure"]
+        != milk_reco["cost_optimized"]["structure"]
+    )
+    assert (
+        chips_reco["cost_optimized"]["cost_per_1k"]
+        != milk_reco["cost_optimized"]["cost_per_1k"]
+    )
+
+    # The prompt hands the model the solved stacks, so it explains rather than
+    # invents. Guards the LLM-off path here; the key-on path is not testable
+    # without a provider.
+    from services.prompts import recommend_user_prompt
+
+    prompt = recommend_user_prompt(milk, milk_reco)
+    assert milk_reco["cost_optimized"]["structure"] in prompt
+    assert "do not change them" in prompt
+
+
 def test_layerstack_recalculate(client):
     response = client.post(
         "/layerstack/recalculate",

@@ -1,4 +1,12 @@
-"""3-tier AI recommendation engine (text LLM + grounded fallback)."""
+"""3-tier AI recommendation engine.
+
+Numbers and structures come from ``services.stack_solver``, which searches the
+shared material database and runs every candidate through the same physics as
+the digital-twin and shelf-life screens. When an LLM key is configured the model
+is used **only** to explain the result in prose — it can never choose a material
+or invent a number, so the recommendation screen and the simulator can never
+disagree.
+"""
 
 from __future__ import annotations
 
@@ -10,44 +18,64 @@ from services.fallback import recommendations_for
 from services.llm_client import LLMClient, LLMUnavailable, parse_json
 from services.projects import on_recommendation_created
 from services.prompts import RECOMMEND_SYSTEM, recommend_user_prompt
+from services.stack_solver import TIERS, solve_recommendations
 from services.store import get_store
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
-TIERS = ("cost_optimized", "sustainability_first", "max_barrier")
-
 DISCLAIMER = (
-    "AI-estimated based on published material ranges — validate with a lab "
-    "before production."
+    "Stack solved from the shared material database with the same physics the "
+    "digital twin uses. AI-estimated — validate with a lab before production."
+)
+
+#: Fields the Flutter client parses. A tier missing any of these would break the
+#: result screen, so the response is guarded before it is stored.
+_REQUIRED_TIER_KEYS = (
+    "structure",
+    "layers",
+    "otr_cc_m2_day",
+    "mvtr_g_m2_day",
+    "cost_per_1k",
 )
 
 
-def _merge_with_fallback(parsed: dict) -> dict:
-    """Guarantee every tier has the full field set.
+def _guard_tiers(tiers: dict) -> dict:
+    """Ensure every tier carries the full field set.
 
-    LLM output is treated as a *suggestion* for structure/numbers; missing
-    fields (or a missing tier) fall back to the material-database values so the
-    response contract never breaks the Flutter parser.
+    The solver is the source of truth; the old templates are only used to fill a
+    key the solver somehow omitted, so the response contract can never break.
     """
     fallback = recommendations_for()
-    merged: dict = {}
+    guarded: dict = {}
     for tier in TIERS:
         base = dict(fallback[tier])
-        candidate = parsed.get(tier) if isinstance(parsed.get(tier), dict) else {}
-        for key in (
-            "structure",
-            "mvtr_g_m2_day",
-            "otr_cc_m2_day",
-            "cost_per_1k",
-            "carbon_kgco2e_per_kg",
-        ):
-            value = candidate.get(key)
-            if isinstance(value, (int, float)) or (isinstance(value, str) and value.strip()):
-                base[key] = value
-        # Layers come from the DB (so LCA/layer-stack screens stay consistent);
-        # the LLM only names the structure.
-        merged[tier] = base
-    return merged
+        candidate = tiers.get(tier)
+        if isinstance(candidate, dict):
+            base.update({k: v for k, v in candidate.items() if v is not None})
+        for key in _REQUIRED_TIER_KEYS:
+            if not base.get(key):
+                base[key] = fallback[tier][key]
+        guarded[tier] = base
+    return guarded
+
+
+def _apply_llm_prose(tiers: dict, notes: dict) -> bool:
+    """Attach the model's explanations. Returns True if anything was applied.
+
+    Only the ``rationale`` string is read — materials, thicknesses and numbers
+    stay exactly as the solver produced them.
+    """
+    applied = False
+    for tier in TIERS:
+        candidate = notes.get(tier)
+        if not isinstance(candidate, dict):
+            continue
+        rationale = candidate.get("rationale")
+        if isinstance(rationale, str) and rationale.strip():
+            tiers[tier]["rationale"] = rationale.strip()
+            tiers[tier]["rationale_source"] = "llm"
+            applied = True
+    return applied
 
 
 @router.post("/generate")
@@ -57,22 +85,28 @@ def generate(payload: RecommendationRequest) -> dict:
     if not product:
         raise HTTPException(status_code=404, detail="product not found")
 
+    # 1. Solve first. These numbers are the answer; nothing downstream may
+    #    overwrite them.
+    tiers = _guard_tiers(solve_recommendations(product))
+
+    # 2. Optionally let the model explain them.
     used_llm = False
-    tiers: dict
     client = LLMClient()
     if client.enabled:
         try:
             raw = client.complete(
                 system=RECOMMEND_SYSTEM,
-                messages=[{"role": "user", "content": recommend_user_prompt(product)}],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": recommend_user_prompt(product, tiers),
+                    }
+                ],
                 json_mode=True,
             )
-            tiers = _merge_with_fallback(parse_json(raw))
-            used_llm = True
+            used_llm = _apply_llm_prose(tiers, parse_json(raw))
         except (LLMUnavailable, ValueError):
-            tiers = recommendations_for()
-    else:
-        tiers = recommendations_for()
+            used_llm = False
 
     rec_id = new_id("rec")
     document = {
